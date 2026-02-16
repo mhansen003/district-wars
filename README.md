@@ -17,7 +17,7 @@ npm run dev
 - **Language:** TypeScript
 - **Build:** Vite
 - **Server:** Node.js + Socket.io
-- **Deploy:** Vercel (client) + Railway (server)
+- **Deploy:** Vercel
 
 ## Documentation
 

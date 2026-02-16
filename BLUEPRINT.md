@@ -296,7 +296,7 @@ Each district is positioned in a corner, ensuring equidistant travel times betwe
 | **Language** | TypeScript | Type safety catches bugs early in a complex system with many interacting components |
 | **Multiplayer** | Socket.io + Node.js | Real-time bidirectional communication, handles reconnection gracefully |
 | **Server** | Node.js (Express) | Same language as client reduces context-switching; lightweight for game state authority |
-| **Deployment** | Vercel (client) + Railway/Fly.io (game server) | Vercel for static client hosting; dedicated server for WebSocket connections |
+| **Deployment** | Vercel (client + serverless API routes) | Single deployment target; Vercel Serverless Functions for matchmaking, WebSocket via Vercel's Edge Runtime or Ably/Pusher for real-time |
 | **State Management** | Custom ECS | Lightweight, game-specific; avoids framework overhead |
 | **Build Tool** | Vite | Fast HMR for development, optimized builds for production |
 | **Testing** | Vitest | Fast, TypeScript-native, compatible with Vite |
@@ -1266,7 +1266,7 @@ Week 5–6: M5 — Playtesting, Balancing & Launch
 - [ ] Client-side interpolation for smooth movement between server ticks
 - [ ] Player disconnection handling (AI takes over disconnected player)
 - [ ] Fog of war — can only see your own units and area around them
-- [ ] Deploy: Client to Vercel, Server to Railway/Fly.io
+- [ ] Deploy to Vercel (client + API routes)
 
 **Exit Criteria:** 4 browser tabs connected to the same game, each controlling a different district, with smooth gameplay.
 
@@ -1343,7 +1343,7 @@ Week 5–6: M5 — Playtesting, Balancing & Launch
 | Scope creep (too many unit types, mechanics) | High | High | Strict adherence to milestones; new ideas go to "Phase 2 Backlog" |
 | Performance with many units | Medium | Low | Spatial grid from day 1; profile early, optimize hot paths |
 | Player acquisition (nobody plays) | High | Medium | Web-based = zero friction; focus on "share a link" multiplayer |
-| WebSocket server costs | Low | Medium | Railway free tier handles ~5 concurrent rooms; scale only if needed |
+| WebSocket relay costs | Low | Medium | Vercel handles client; use Ably/Pusher free tier or PartyKit for real-time sync |
 
 ## 4.3 Task Tracking Structure
 
@@ -1397,6 +1397,7 @@ Four squares (representing districts) arranged in a 2×2 grid, each with a flag/
 ## 5.2 Landing Page
 
 **URL:** `district-wars.vercel.app`
+**Repo:** `github.com/mhansen003/district-wars`
 
 **Hero Section:**
 - Animated game preview (GIF or short video)
