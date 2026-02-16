@@ -1,50 +1,54 @@
-// UIScene — HUD overlay with clickable action bar
+// UIScene — HUD overlay with conveyor belt item system
 
 import Phaser from 'phaser';
 import type { GameScene } from './GameScene';
 import type { EconomySystem } from '../../shared/systems/EconomySystem';
-import type { PlayerId, UnitType } from '../../shared/types';
+import type { ConveyorSystem, ConveyorItem } from '../../shared/systems/ConveyorSystem';
+import type { PlayerId } from '../../shared/types';
 import { TEAM_HEX, TEAM_COLORS } from '../../shared/types';
-import { UNIT_CONFIGS } from '../../shared/config/units';
-import { ECONOMY } from '../../shared/config/economy';
 
-interface ActionButton {
-  container: Phaser.GameObjects.Container;
-  bg: Phaser.GameObjects.Rectangle;
-  label: Phaser.GameObjects.Text;
-  cost: Phaser.GameObjects.Text;
-  hotkey: Phaser.GameObjects.Text;
-  getCost: () => number;
-  action: () => void;
-}
+// Visual constants for the conveyor belt
+const SLOT_W = 64;
+const SLOT_H = 56;
+const SLOT_GAP = 6;
+const BAR_H = 80;
 
 export class UIScene extends Phaser.Scene {
   private gameScene!: GameScene;
   private economy!: EconomySystem;
+  private conveyor!: ConveyorSystem;
   private humanPlayer!: PlayerId;
 
   // HUD elements
   private coinText!: Phaser.GameObjects.Text;
   private incomeText!: Phaser.GameObjects.Text;
   private unitCountText!: Phaser.GameObjects.Text;
-  private buildModeText!: Phaser.GameObjects.Text;
-  private queueText!: Phaser.GameObjects.Text;
   private playerIndicators: Phaser.GameObjects.Text[] = [];
   private gameOverPanel: Phaser.GameObjects.Container | null = null;
   private instructionsPanel: Phaser.GameObjects.Container | null = null;
   private gamePaused: boolean = true;
 
-  // Action bar
-  private actionButtons: ActionButton[] = [];
-  private actionBarContainer!: Phaser.GameObjects.Container;
+  // Conveyor belt UI
+  private beltContainer!: Phaser.GameObjects.Container;
+  private slotContainers: Phaser.GameObjects.Container[] = [];
+  private timerBar!: Phaser.GameObjects.Rectangle;
+  private timerBarBg!: Phaser.GameObjects.Rectangle;
+  private nextItemText!: Phaser.GameObjects.Text;
+  private dropIndicator!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'UIScene' });
   }
 
-  init(data: { gameScene: GameScene; economy: EconomySystem; humanPlayer: PlayerId }): void {
+  init(data: {
+    gameScene: GameScene;
+    economy: EconomySystem;
+    conveyor: ConveyorSystem;
+    humanPlayer: PlayerId;
+  }): void {
     this.gameScene = data.gameScene;
     this.economy = data.economy;
+    this.conveyor = data.conveyor;
     this.humanPlayer = data.humanPlayer;
   }
 
@@ -53,7 +57,7 @@ export class UIScene extends Phaser.Scene {
     const h = this.cameras.main.height;
 
     // --- Top-left: Economy panel ---
-    this.add.rectangle(0, 0, 220, 90, 0x0d1117, 0.85)
+    this.add.rectangle(0, 0, 200, 65, 0x0d1117, 0.85)
       .setOrigin(0, 0).setStrokeStyle(1, 0x30363d);
 
     this.coinText = this.add.text(12, 10, '', {
@@ -62,18 +66,9 @@ export class UIScene extends Phaser.Scene {
     this.incomeText = this.add.text(12, 32, '', {
       fontSize: '12px', color: '#8b949e', fontFamily: 'monospace',
     });
-    this.unitCountText = this.add.text(12, 50, '', {
-      fontSize: '12px', color: '#8b949e', fontFamily: 'monospace',
+    this.unitCountText = this.add.text(12, 48, '', {
+      fontSize: '11px', color: '#8b949e', fontFamily: 'monospace',
     });
-    this.queueText = this.add.text(12, 68, '', {
-      fontSize: '11px', color: '#a78bfa', fontFamily: 'monospace',
-    });
-
-    // Build mode indicator (top center)
-    this.buildModeText = this.add.text(w / 2, 40, '', {
-      fontSize: '14px', color: '#22d3ee', fontFamily: 'monospace',
-      backgroundColor: '#0d1117', padding: { x: 10, y: 5 },
-    }).setOrigin(0.5);
 
     // --- Top-right: Player status ---
     for (let i = 0; i < 4; i++) {
@@ -86,13 +81,19 @@ export class UIScene extends Phaser.Scene {
       this.playerIndicators.push(indicator);
     }
 
-    // --- Bottom: Action Bar ---
-    this.createActionBar();
+    // --- Bottom: Conveyor Belt ---
+    this.createConveyorBelt();
+
+    // Drop indicator (top center, shown when holding an item)
+    this.dropIndicator = this.add.text(w / 2, 40, '', {
+      fontSize: '14px', color: '#22d3ee', fontFamily: 'monospace',
+      backgroundColor: '#0d1117', padding: { x: 10, y: 5 },
+    }).setOrigin(0.5).setVisible(false);
 
     // --- Instructions on launch ---
     this.showInstructions();
 
-    // H key toggles instructions
+    // H or ? key toggles instructions
     this.input.keyboard!.on('keydown-H', () => {
       if (this.instructionsPanel) this.dismissInstructions();
       else if (!this.gameOverPanel) this.showInstructions();
@@ -103,73 +104,54 @@ export class UIScene extends Phaser.Scene {
     this.events.on('game-over', (winner: PlayerId) => this.showGameOver(winner));
   }
 
-  // ─── Action Bar ────────────────────────────────────────
+  // ─── Conveyor Belt ───────────────────────────────────────
 
-  private createActionBar(): void {
+  private createConveyorBelt(): void {
     const w = this.cameras.main.width;
     const h = this.cameras.main.height;
 
+    this.beltContainer = this.add.container(0, 0);
+
     // Bar background
-    const barH = 72;
-    const barBg = this.add.rectangle(w / 2, h - barH / 2, w, barH, 0x0d1117, 0.92)
+    const barBg = this.add.rectangle(w / 2, h - BAR_H / 2, w, BAR_H, 0x0d1117, 0.92)
       .setStrokeStyle(1, 0x30363d);
+    this.beltContainer.add(barBg);
 
-    this.actionBarContainer = this.add.container(0, 0);
-    this.actionBarContainer.add(barBg);
+    // "CONVEYOR" label
+    const beltLabel = this.add.text(w / 2, h - BAR_H + 5, 'CONVEYOR BELT', {
+      fontSize: '9px', color: '#484f58', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0);
+    this.beltContainer.add(beltLabel);
 
-    // Section label helper
-    const addSectionLabel = (x: number, text: string) => {
-      const label = this.add.text(x, h - barH + 4, text, {
-        fontSize: '9px', color: '#484f58', fontFamily: 'monospace',
-      }).setOrigin(0.5, 0);
-      this.actionBarContainer.add(label);
-    };
+    // Create 5 slot containers
+    const totalW = this.conveyor.MAX_SLOTS * (SLOT_W + SLOT_GAP) - SLOT_GAP;
+    const startX = (w - totalW) / 2 + SLOT_W / 2;
+    const slotY = h - BAR_H / 2 + 4;
 
-    // Button definitions
-    const buttonDefs = [
-      // BUILD section
-      { label: '⚡ Generator', hotkey: 'G', cost: ECONOMY.GENERATOR_BASE_COST, color: 0x22c55e,
-        action: () => this.gameScene.enterBuildMode('generator'), section: 'BUILD' },
-      { label: '🏠 Barracks', hotkey: 'B', cost: ECONOMY.BARRACKS_COST, color: 0x8b5cf6,
-        action: () => this.gameScene.enterBuildMode('barracks'), section: 'BUILD' },
-      // TRAIN section
-      { label: '⚔ Trooper', hotkey: '1', cost: UNIT_CONFIGS.trooper.cost, color: 0xdc2626,
-        action: () => this.gameScene.trainUnit('trooper'), section: 'TRAIN' },
-      { label: '🏹 Archer', hotkey: '2', cost: UNIT_CONFIGS.archer.cost, color: 0x16a34a,
-        action: () => this.gameScene.trainUnit('archer'), section: 'TRAIN' },
-      { label: '🛡 Tank', hotkey: '3', cost: UNIT_CONFIGS.tank.cost, color: 0xf59e0b,
-        action: () => this.gameScene.trainUnit('tank'), section: 'TRAIN' },
-      { label: '👁 Scout', hotkey: '4', cost: UNIT_CONFIGS.scout.cost, color: 0x06b6d4,
-        action: () => this.gameScene.trainUnit('scout'), section: 'TRAIN' },
-    ];
-
-    const btnW = 88;
-    const btnH = 48;
-    const gap = 6;
-    const totalW = buttonDefs.length * (btnW + gap) - gap;
-    const startX = (w - totalW) / 2 + btnW / 2;
-    const btnY = h - barH / 2 + 2;
-
-    // Section labels
-    const buildCenterX = startX + (btnW + gap) * 0.5;
-    const trainCenterX = startX + (btnW + gap) * 3.5;
-    addSectionLabel(buildCenterX, 'BUILD');
-    addSectionLabel(trainCenterX, 'TRAIN UNITS');
-
-    // Separator line between BUILD and TRAIN
-    const sepX = startX + (btnW + gap) * 2 - gap / 2 - btnW / 2;
-    const sep = this.add.rectangle(sepX, btnY, 1, btnH, 0x30363d);
-    this.actionBarContainer.add(sep);
-
-    for (let i = 0; i < buttonDefs.length; i++) {
-      const def = buttonDefs[i];
-      const x = startX + i * (btnW + gap);
-      const btn = this.createActionButton(x, btnY, btnW, btnH, def);
-      this.actionButtons.push(btn);
+    for (let i = 0; i < this.conveyor.MAX_SLOTS; i++) {
+      const x = startX + i * (SLOT_W + SLOT_GAP);
+      const slot = this.createSlot(x, slotY, i);
+      this.slotContainers.push(slot);
     }
 
-    // Help button (far right)
-    const helpBtn = this.add.text(w - 16, h - barH / 2, '?', {
+    // Timer bar below slots
+    const timerBarW = totalW;
+    const timerBarY = h - 10;
+    this.timerBarBg = this.add.rectangle(w / 2, timerBarY, timerBarW, 4, 0x1a1f2b);
+    this.beltContainer.add(this.timerBarBg);
+    this.timerBar = this.add.rectangle(
+      w / 2 - timerBarW / 2, timerBarY, 0, 4, 0x22d3ee
+    ).setOrigin(0, 0.5);
+    this.beltContainer.add(this.timerBar);
+
+    // Next item text
+    this.nextItemText = this.add.text(w / 2 + timerBarW / 2 + 8, timerBarY, '', {
+      fontSize: '10px', color: '#6e7681', fontFamily: 'monospace',
+    }).setOrigin(0, 0.5);
+    this.beltContainer.add(this.nextItemText);
+
+    // Help button (far right of bar)
+    const helpBtn = this.add.text(w - 16, h - BAR_H / 2, '?', {
       fontSize: '18px', color: '#484f58', fontFamily: 'monospace', fontStyle: 'bold',
       backgroundColor: '#161b22', padding: { x: 8, y: 4 },
     }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
@@ -179,56 +161,68 @@ export class UIScene extends Phaser.Scene {
       if (this.instructionsPanel) this.dismissInstructions();
       else this.showInstructions();
     });
-    this.actionBarContainer.add(helpBtn);
+    this.beltContainer.add(helpBtn);
   }
 
-  private createActionButton(
-    x: number, y: number, w: number, h: number,
-    def: { label: string; hotkey: string; cost: number; color: number; action: () => void }
-  ): ActionButton {
+  private createSlot(x: number, y: number, _index: number): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
 
-    // Button background
-    const bg = this.add.rectangle(0, 0, w, h, 0x161b22, 0.95)
+    // Slot background
+    const bg = this.add.rectangle(0, 0, SLOT_W, SLOT_H, 0x161b22, 0.95)
       .setStrokeStyle(1, 0x30363d)
       .setInteractive({ useHandCursor: true });
+    bg.setName('slotBg');
     container.add(bg);
 
-    // Colored accent bar at top
-    const accent = this.add.rectangle(0, -h / 2 + 2, w - 2, 3, def.color, 0.8);
+    // Colored accent bar at top (hidden until item present)
+    const accent = this.add.rectangle(0, -SLOT_H / 2 + 2, SLOT_W - 2, 3, 0x484f58, 0.3);
+    accent.setName('accent');
     container.add(accent);
 
-    // Label
-    const label = this.add.text(0, -6, def.label, {
-      fontSize: '10px', color: '#e6edf3', fontFamily: 'monospace',
+    // Icon (large, centered)
+    const icon = this.add.text(0, -6, '', {
+      fontSize: '18px', fontFamily: 'monospace',
     }).setOrigin(0.5);
+    icon.setName('icon');
+    container.add(icon);
+
+    // Label (small, below icon)
+    const label = this.add.text(0, 14, '', {
+      fontSize: '8px', color: '#8b949e', fontFamily: 'monospace',
+    }).setOrigin(0.5);
+    label.setName('label');
     container.add(label);
 
-    // Cost
-    const cost = this.add.text(0, 10, `$${def.cost}`, {
-      fontSize: '10px', color: '#ffd700', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5);
-    container.add(cost);
-
-    // Hotkey badge
-    const hotkey = this.add.text(w / 2 - 4, -h / 2 + 6, def.hotkey, {
-      fontSize: '8px', color: '#6e7681', fontFamily: 'monospace',
-      backgroundColor: '#0d1117', padding: { x: 3, y: 1 },
+    // Slot number in corner
+    const num = this.add.text(SLOT_W / 2 - 4, -SLOT_H / 2 + 4, '', {
+      fontSize: '8px', color: '#30363d', fontFamily: 'monospace',
     }).setOrigin(1, 0);
-    container.add(hotkey);
+    num.setName('num');
+    container.add(num);
 
-    // Click handler
-    bg.on('pointerdown', () => def.action());
-    bg.on('pointerover', () => bg.setStrokeStyle(1.5, 0x58a6ff));
+    // Click handler — pick up item
+    bg.on('pointerdown', () => this.onSlotClick(_index));
+    bg.on('pointerover', () => {
+      const belt = this.conveyor.belts.get(this.humanPlayer);
+      if (belt && belt[_index]) {
+        bg.setStrokeStyle(1.5, 0x58a6ff);
+      }
+    });
     bg.on('pointerout', () => bg.setStrokeStyle(1, 0x30363d));
 
-    this.actionBarContainer.add(container);
+    this.beltContainer.add(container);
+    return container;
+  }
 
-    return {
-      container, bg, label, cost, hotkey,
-      getCost: () => def.cost,
-      action: def.action,
-    };
+  private onSlotClick(index: number): void {
+    // Don't pick up items while already dropping one
+    if (this.gameScene.getDroppingItem()) return;
+
+    const belt = this.conveyor.belts.get(this.humanPlayer);
+    if (!belt || !belt[index]) return;
+
+    const item = belt[index];
+    this.gameScene.startDroppingItem(item);
   }
 
   // ─── Update Loop ───────────────────────────────────────
@@ -236,36 +230,52 @@ export class UIScene extends Phaser.Scene {
   update(): void {
     if (this.gameOverPanel) return;
 
-    const coins = this.economy.getCoins(this.humanPlayer);
     const income = this.economy.getIncome(this.humanPlayer);
     const genCount = this.economy.players.get(this.humanPlayer)?.generatorCount ?? 0;
     const unitCount = this.gameScene.getUnitCount(this.humanPlayer);
-    const training = this.gameScene.getTrainingProgress(this.humanPlayer);
-    const buildMode = this.gameScene.getBuildMode();
+    const belt = this.conveyor.belts.get(this.humanPlayer) ?? [];
     const winCondition = this.gameScene.getWinCondition();
+    const droppingItem = this.gameScene.getDroppingItem();
 
     // Economy display
-    this.coinText.setText(`$${Math.floor(coins)}`);
-    this.incomeText.setText(`+${income.toFixed(1)}/sec  |  ${genCount} generators`);
+    this.coinText.setText(`+${income.toFixed(1)}/sec`);
+    this.incomeText.setText(`${genCount} generators`);
     this.unitCountText.setText(`${unitCount} units`);
 
-    // Training queue
-    if (training.length > 0) {
-      const queueStr = training.map(t => {
-        const pct = Math.floor(t.progress * 100);
-        return `${t.unitType[0].toUpperCase()}:${pct}%`;
-      }).join('  ');
-      this.queueText.setText(`Training: ${queueStr}`);
-    } else {
-      this.queueText.setText('');
+    // Update conveyor slots
+    for (let i = 0; i < this.conveyor.MAX_SLOTS; i++) {
+      const slot = this.slotContainers[i];
+      const item = belt[i] ?? null;
+      this.updateSlot(slot, item, i);
     }
 
-    // Build mode indicator
-    if (buildMode) {
-      this.buildModeText.setText(`PLACING ${buildMode.toUpperCase()} — Click map to place, ESC or right-click to cancel`);
-      this.buildModeText.setVisible(true);
+    // Timer bar
+    const timeRemaining = this.conveyor.getTimeRemaining(this.humanPlayer);
+    const interval = this.conveyor.getInterval(this.humanPlayer, income);
+    const progress = belt.length >= this.conveyor.MAX_SLOTS ? 0 : 1 - (timeRemaining / interval);
+    const totalW = this.conveyor.MAX_SLOTS * (SLOT_W + SLOT_GAP) - SLOT_GAP;
+    const w = this.cameras.main.width;
+    this.timerBar.setPosition(w / 2 - totalW / 2, this.timerBar.y);
+    this.timerBar.setSize(totalW * Math.max(0, Math.min(1, progress)), 4);
+
+    if (belt.length >= this.conveyor.MAX_SLOTS) {
+      this.nextItemText.setText('FULL');
+      this.nextItemText.setColor('#ef4444');
+      this.timerBar.setFillStyle(0xef4444);
     } else {
-      this.buildModeText.setVisible(false);
+      this.nextItemText.setText(`${timeRemaining.toFixed(1)}s`);
+      this.nextItemText.setColor('#6e7681');
+      this.timerBar.setFillStyle(0x22d3ee);
+    }
+
+    // Drop indicator
+    if (droppingItem) {
+      this.dropIndicator.setText(
+        `PLACING ${droppingItem.label.toUpperCase()} ${droppingItem.icon} — Click map to place, ESC/right-click to cancel`
+      );
+      this.dropIndicator.setVisible(true);
+    } else {
+      this.dropIndicator.setVisible(false);
     }
 
     // Player status
@@ -281,14 +291,42 @@ export class UIScene extends Phaser.Scene {
         this.playerIndicators[i].setText(`● ${label}  ⚔${units}`);
       }
     }
+  }
 
-    // Action button affordability
-    for (const btn of this.actionButtons) {
-      const canAfford = coins >= btn.getCost();
-      btn.bg.setAlpha(canAfford ? 1 : 0.4);
-      btn.label.setAlpha(canAfford ? 1 : 0.4);
-      btn.cost.setAlpha(canAfford ? 1 : 0.5);
-      btn.cost.setColor(canAfford ? '#ffd700' : '#ef4444');
+  private updateSlot(slot: Phaser.GameObjects.Container, item: ConveyorItem | null, index: number): void {
+    const bg = slot.getByName('slotBg') as Phaser.GameObjects.Rectangle;
+    const accent = slot.getByName('accent') as Phaser.GameObjects.Rectangle;
+    const icon = slot.getByName('icon') as Phaser.GameObjects.Text;
+    const label = slot.getByName('label') as Phaser.GameObjects.Text;
+    const num = slot.getByName('num') as Phaser.GameObjects.Text;
+
+    if (item) {
+      // Filled slot
+      const colorHex = `#${item.color.toString(16).padStart(6, '0')}`;
+      accent.setFillStyle(item.color, 0.9);
+      icon.setText(item.icon);
+      label.setText(item.label);
+      label.setColor(colorHex);
+      num.setText(`${index + 1}`);
+      num.setColor('#484f58');
+      bg.setAlpha(1);
+      bg.setFillStyle(0x161b22, 0.95);
+
+      // Highlight if this item is currently being dropped
+      const dropping = this.gameScene.getDroppingItem();
+      if (dropping && dropping.id === item.id) {
+        bg.setStrokeStyle(2, 0x22d3ee);
+        bg.setAlpha(0.6);
+      }
+    } else {
+      // Empty slot
+      accent.setFillStyle(0x484f58, 0.15);
+      icon.setText('');
+      label.setText('');
+      num.setText(`${index + 1}`);
+      num.setColor('#21262d');
+      bg.setAlpha(0.5);
+      bg.setFillStyle(0x0d1117, 0.6);
     }
   }
 
@@ -310,7 +348,7 @@ export class UIScene extends Phaser.Scene {
 
     // Modal panel
     const panelW = Math.min(500, w - 40);
-    const panelH = Math.min(440, h - 40);
+    const panelH = Math.min(460, h - 40);
     this.instructionsPanel.add(
       this.add.rectangle(0, 0, panelW, panelH, 0x0d1117, 0.97).setStrokeStyle(2, 0x30363d)
     );
@@ -323,20 +361,23 @@ export class UIScene extends Phaser.Scene {
       { text: 'Destroy all 3 enemy HQs to capture their flags.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 102 },
       { text: 'You are RED. The AI controls Blue, Green, and Purple.', style: { fontSize: '12px', color: '#fca5a5' }, y: -panelH / 2 + 119 },
 
-      { text: 'HOW TO PLAY', style: { fontSize: '13px', color: '#22c55e', fontStyle: 'bold' }, y: -panelH / 2 + 150 },
-      { text: '1. Click the buttons at the bottom to build & train', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 170 },
-      { text: '2. Click the map to place buildings', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 187 },
-      { text: '3. Left-click or drag to select your units', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 204 },
-      { text: '4. Right-click to send selected units somewhere', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 221 },
-      { text: '5. Units auto-attack nearby enemies', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 238 },
+      { text: 'THE CONVEYOR BELT', style: { fontSize: '13px', color: '#22c55e', fontStyle: 'bold' }, y: -panelH / 2 + 150 },
+      { text: 'Random items appear on your conveyor belt at the bottom.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 170 },
+      { text: 'Click an item to pick it up, then click the map to place it.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 187 },
+      { text: 'Buildings go where you click. Units spawn & fight automatically.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 204 },
+      { text: 'Build Generators to speed up item delivery!', style: { fontSize: '11px', color: '#22d3ee' }, y: -panelH / 2 + 224 },
 
-      { text: 'COMBAT ROCK-PAPER-SCISSORS', style: { fontSize: '13px', color: '#ef4444', fontStyle: 'bold' }, y: -panelH / 2 + 270 },
-      { text: 'Trooper > Archer > Tank > Trooper', style: { fontSize: '14px', color: '#fca5a5', fontStyle: 'bold' }, y: -panelH / 2 + 290 },
+      { text: 'UNIT CONTROLS', style: { fontSize: '13px', color: '#f59e0b', fontStyle: 'bold' }, y: -panelH / 2 + 254 },
+      { text: 'Left-click or drag to select your units.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 274 },
+      { text: 'Right-click to send selected units somewhere.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 291 },
+      { text: 'Units auto-attack nearby enemies.', style: { fontSize: '12px', color: '#c9d1d9' }, y: -panelH / 2 + 308 },
 
-      { text: 'TIPS', style: { fontSize: '13px', color: '#eab308', fontStyle: 'bold' }, y: -panelH / 2 + 320 },
-      { text: 'Build Generators early for more income.', style: { fontSize: '11px', color: '#c9d1d9' }, y: -panelH / 2 + 338 },
-      { text: 'You need a Barracks before you can train units.', style: { fontSize: '11px', color: '#c9d1d9' }, y: -panelH / 2 + 355 },
-      { text: 'Scroll wheel to zoom. Middle-drag or arrows to pan.', style: { fontSize: '11px', color: '#c9d1d9' }, y: -panelH / 2 + 372 },
+      { text: 'COMBAT ROCK-PAPER-SCISSORS', style: { fontSize: '13px', color: '#ef4444', fontStyle: 'bold' }, y: -panelH / 2 + 340 },
+      { text: 'Trooper > Archer > Tank > Trooper', style: { fontSize: '14px', color: '#fca5a5', fontStyle: 'bold' }, y: -panelH / 2 + 360 },
+
+      { text: 'TIPS', style: { fontSize: '13px', color: '#eab308', fontStyle: 'bold' }, y: -panelH / 2 + 392 },
+      { text: 'ESC or right-click to cancel placing an item.', style: { fontSize: '11px', color: '#c9d1d9' }, y: -panelH / 2 + 410 },
+      { text: 'Scroll wheel to zoom. Middle-drag or arrows to pan.', style: { fontSize: '11px', color: '#c9d1d9' }, y: -panelH / 2 + 427 },
     ];
 
     for (const line of lines) {
