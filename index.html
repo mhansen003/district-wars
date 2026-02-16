@@ -162,6 +162,20 @@
       transform: none !important;
     }
 
+    #game-container {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 1000;
+    }
+
+    #game-container canvas {
+      display: block;
+    }
+
     .status-badge {
       display: inline-flex;
       align-items: center;
@@ -366,6 +380,12 @@
 </head>
 <body>
 
+  <!-- Game Container (hidden until Play) -->
+  <div id="game-container"></div>
+
+  <!-- Landing Page -->
+  <div id="landing">
+
   <!-- Hero -->
   <section class="hero">
     <div class="logo-grid">
@@ -379,13 +399,13 @@
     <p class="tagline">Build. Battle. Conquer.</p>
 
     <div class="cta-group">
-      <button class="btn btn-primary" disabled>Play Now</button>
+      <button id="play-btn" class="btn btn-primary" disabled>Play Now</button>
       <button class="btn btn-secondary" disabled>Create Private Room</button>
     </div>
 
     <div class="status-badge">
-      <span class="status-dot"></span>
-      In Development — Coming Soon
+      <span class="status-dot" style="background: #22c55e;"></span>
+      Alpha — Playable Now
     </div>
   </section>
 
@@ -471,6 +491,8 @@
   <footer>
     <p>District Wars &copy; 2026 Mark Hansen &middot; <a href="https://github.com/mhansen003/district-wars" target="_blank" rel="noopener">GitHub</a></p>
   </footer>
+
+  </div><!-- /landing -->
 
   <script type="module" src="/src/main.ts"></script>
 </body>
