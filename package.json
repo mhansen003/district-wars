@@ -1,0 +1,22 @@
+{
+  "name": "district-wars",
+  "version": "0.1.0",
+  "private": true,
+  "description": "4-player browser-based RTS game — Build. Battle. Conquer.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mhansen003/district-wars.git"
+  },
+  "author": "Mark Hansen",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}

@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>District Wars — Build. Battle. Conquer.</title>
+  <meta name="description" content="A 4-player real-time strategy game playable in your browser. Control a district, build your economy, train your army, and conquer all four flags to win." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0D1117;
+      --surface: #161B22;
+      --border: #30363D;
+      --text: #E6EDF3;
+      --text-muted: #8B949E;
+      --red: #DC2626;
+      --blue: #2563EB;
+      --green: #16A34A;
+      --purple: #9333EA;
+      --glow: rgba(37, 99, 235, 0.15);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Hero */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      position: relative;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(220, 38, 38, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 80% 30%, rgba(37, 99, 235, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 20% 70%, rgba(22, 163, 74, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(147, 51, 234, 0.08) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .logo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-cell {
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      border: 2px solid;
+      position: relative;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .logo-cell:hover {
+      transform: scale(1.1);
+    }
+
+    .logo-cell.red    { background: rgba(220,38,38,0.15); border-color: var(--red); box-shadow: 0 0 20px rgba(220,38,38,0.2); }
+    .logo-cell.blue   { background: rgba(37,99,235,0.15); border-color: var(--blue); box-shadow: 0 0 20px rgba(37,99,235,0.2); }
+    .logo-cell.green  { background: rgba(22,163,74,0.15); border-color: var(--green); box-shadow: 0 0 20px rgba(22,163,74,0.2); }
+    .logo-cell.purple { background: rgba(147,51,234,0.15); border-color: var(--purple); box-shadow: 0 0 20px rgba(147,51,234,0.2); }
+
+    .flag-icon { filter: drop-shadow(0 0 4px currentColor); }
+
+    h1 {
+      font-size: clamp(2.5rem, 8vw, 5rem);
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 0.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .tagline {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cta-group {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .btn {
+      padding: 0.875rem 2rem;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--blue);
+      color: white;
+      box-shadow: 0 0 30px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: #3B82F6;
+      box-shadow: 0 0 40px rgba(37, 99, 235, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #1C2333;
+      border-color: var(--text-muted);
+      transform: translateY(-2px);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      margin-top: 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #F59E0B;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Features */
+    .features {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 4rem 2rem 6rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--blue);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* How it works */
+    .how-it-works {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem 2rem 6rem;
+      text-align: center;
+    }
+
+    .how-it-works h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 3rem;
+    }
+
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .step-number {
+      width: 48px;
+      height: 48px;
+      min-width: 48px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: white;
+      font-weight: 900;
+      font-size: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .step p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* Map preview */
+    .map-preview {
+      max-width: 500px;
+      margin: 0 auto 4rem;
+      padding: 0 2rem;
+    }
+
+    .map-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 4px;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+    }
+
+    .district {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      position: relative;
+      transition: all 0.3s;
+    }
+
+    .district:hover { filter: brightness(1.3); }
+
+    .district.d1 { background: rgba(220,38,38,0.12); }
+    .district.d2 { background: rgba(37,99,235,0.12); }
+    .district.d3 { background: rgba(22,163,74,0.12); }
+    .district.d4 { background: rgba(147,51,234,0.12); }
+
+    .district-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .district-flag { font-size: 2rem; }
+
+    .district-name {
+      font-weight: 700;
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    footer a:hover { text-decoration: underline; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .logo-cell { width: 52px; height: 52px; font-size: 1.4rem; }
+      .cta-group { flex-direction: column; align-items: center; }
+      .btn { width: 100%; max-width: 280px; justify-content: center; }
+      .step { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="logo-grid">
+      <div class="logo-cell red"><span class="flag-icon">&#9873;</span></div>
+      <div class="logo-cell blue"><span class="flag-icon">&#9873;</span></div>
+      <div class="logo-cell green"><span class="flag-icon">&#9873;</span></div>
+      <div class="logo-cell purple"><span class="flag-icon">&#9873;</span></div>
+    </div>
+
+    <h1>District Wars</h1>
+    <p class="tagline">Build. Battle. Conquer.</p>
+
+    <div class="cta-group">
+      <button class="btn btn-primary" disabled>Play Now</button>
+      <button class="btn btn-secondary" disabled>Create Private Room</button>
+    </div>
+
+    <div class="status-badge">
+      <span class="status-dot"></span>
+      In Development — Coming Soon
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="how-it-works">
+    <h2>How It Works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div>
+          <h3>Build Generators</h3>
+          <p>Invest coins into generators that produce a steady stream of income. The stronger your economy, the bigger your army.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div>
+          <h3>Train Soldiers</h3>
+          <p>Spend coins on Troopers, Archers, and Tanks. Each unit counters another — choose your composition wisely.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div>
+          <h3>Conquer Districts</h3>
+          <p>March your army to an enemy HQ. Destroy it, capture their flag, absorb their territory. Last district standing wins.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Map Preview -->
+  <section class="map-preview">
+    <div class="map-grid">
+      <div class="district d1">
+        <span class="district-label">District 1</span>
+        <span class="district-flag">&#9873;</span>
+        <span class="district-name">Crimson</span>
+      </div>
+      <div class="district d2">
+        <span class="district-label">District 2</span>
+        <span class="district-flag">&#9873;</span>
+        <span class="district-name">Ocean</span>
+      </div>
+      <div class="district d3">
+        <span class="district-label">District 3</span>
+        <span class="district-flag">&#9873;</span>
+        <span class="district-name">Forest</span>
+      </div>
+      <div class="district d4">
+        <span class="district-label">District 4</span>
+        <span class="district-flag">&#9873;</span>
+        <span class="district-name">Royal</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features">
+    <div class="feature-card">
+      <div class="feature-icon">&#9876;</div>
+      <h3>4-Player Battles</h3>
+      <p>Real-time strategy with 4 districts competing simultaneously. Form alliances, break them, backstab your way to victory.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128176;</div>
+      <h3>Economy vs. Military</h3>
+      <p>Every coin is a choice. Invest in generators for long-term power or soldiers for immediate pressure. There's no single right answer.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#127760;</div>
+      <h3>Zero Downloads</h3>
+      <p>Play instantly in your browser. Share a link, start a war. No installs, no accounts, no friction.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#129302;</div>
+      <h3>Smart AI</h3>
+      <p>Practice against AI opponents with Easy, Medium, and Hard difficulty. They scout, adapt, and fight back.</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>District Wars &copy; 2026 Mark Hansen &middot; <a href="https://github.com/mhansen003/district-wars" target="_blank" rel="noopener">GitHub</a></p>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
