@@ -20,6 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
       preventDefaultWheel: true,
     },
   },
+  disableContextMenu: true,
   render: {
     pixelArt: true,
     antialias: false,

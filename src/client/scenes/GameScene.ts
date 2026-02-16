@@ -197,11 +197,17 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Right click: move/attack command
+    // Right click: move/attack command, or cancel build mode
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.rightButtonDown() && this.selectedUnits.size > 0) {
-        const worldPos = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-        this.issueCommand(worldPos.x, worldPos.y);
+      if (pointer.rightButtonDown()) {
+        if (this.buildMode) {
+          this.buildMode = null;
+          return;
+        }
+        if (this.selectedUnits.size > 0) {
+          const worldPos = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+          this.issueCommand(worldPos.x, worldPos.y);
+        }
       }
     });
 
@@ -296,7 +302,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private enterBuildMode(type: 'generator' | 'barracks'): void {
+  public enterBuildMode(type: 'generator' | 'barracks'): void {
     this.buildMode = type;
     this.clearSelection();
   }
@@ -331,7 +337,7 @@ export class GameScene extends Phaser.Scene {
     this.buildMode = null;
   }
 
-  private trainUnit(unitType: UnitType): void {
+  public trainUnit(unitType: UnitType): void {
     const cfg = UNIT_CONFIGS[unitType];
 
     // Find a selected barracks, or any owned barracks
