@@ -172,7 +172,7 @@ export class GameScene extends Phaser.Scene {
 
     // Left click: select / place building
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonDown) {
+      if (pointer.leftButtonDown()) {
         const worldPos = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
 
         if (this.buildMode) {
@@ -186,7 +186,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonReleased && this.dragStart && !this.buildMode) {
+      if (pointer.leftButtonReleased() && this.dragStart && !this.buildMode) {
         const worldPos = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
         this.handleSelection(this.dragStart, worldPos);
         this.dragStart = null;
